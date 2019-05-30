@@ -6,9 +6,12 @@ import (
 	"crypto/tls"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/jinzhu/copier"
 )
 
 type SOAPEncoder interface {
@@ -18,12 +21,49 @@ type SOAPEncoder interface {
 
 type SOAPDecoder interface {
 	Decode(v interface{}) error
+	DecodeElement(v interface{}, start *xml.StartElement) error
+}
+
+type Envelope interface {
+	AddHeaders(headers []Header)
+	AddContent(content interface{})
+	GetFault() *SOAPFault
+	GetXMLName() xml.Name
 }
 
 type SOAPEnvelope struct {
-	XMLName xml.Name      `xml:"http://schemas.xmlsoap.org/soap/envelope/ Envelope"`
-	Headers []interface{} `xml:"http://schemas.xmlsoap.org/soap/envelope/ Header"`
+	XMLName xml.Name `xml:"http://schemas.xmlsoap.org/soap/envelope/ Envelope"`
+	Headers []Header `xml:"http://schemas.xmlsoap.org/soap/envelope/ Header"`
 	Body    SOAPBody
+}
+
+func (s *SOAPEnvelope) AddHeaders(headers []Header) {
+	s.Headers = headers
+}
+
+func (s *SOAPEnvelope) AddContent(content interface{}) {
+	s.Body = SOAPBody{Content: content}
+}
+
+func (s *SOAPEnvelope) GetFault() *SOAPFault {
+	return s.Body.Fault
+}
+
+func (s *SOAPEnvelope) GetXMLName() xml.Name {
+	return xml.Name{}
+}
+
+type Header interface {
+	SetContent(content interface{})
+}
+
+type SOAPHeader struct {
+	XMLName xml.Name    `xml:"http://schemas.xmlsoap.org/soap/envelope/ Header"`
+	Content interface{} `xml:",omitempty"`
+}
+
+func (h *SOAPHeader) SetContent(content interface{}) {
+	h.Content = content
 }
 
 type SOAPBody struct {
@@ -163,6 +203,7 @@ type options struct {
 	client           HTTPClient
 	httpHeaders      map[string]string
 	mtom             bool
+	envelope         Envelope
 }
 
 var defaultOptions = options{
@@ -173,6 +214,13 @@ var defaultOptions = options{
 
 // A Option sets options such as credentials, tls, etc.
 type Option func(*options)
+
+// With Custom Envelope is an option for customizing the Envelope.
+func WithCustomEnvelope(e Envelope) Option {
+	return func(o *options) {
+		o.envelope = e
+	}
+}
 
 // WithHTTPClient is an Option to set the HTTP client to use
 // This cannot be used with WithTLSHandshakeTimeout, WithTLS,
@@ -238,9 +286,10 @@ func WithMTOM() Option {
 
 // Client is soap client
 type Client struct {
-	url     string
-	opts    *options
-	headers []interface{}
+	url      string
+	opts     *options
+	envelope Envelope
+	headers  []Header
 }
 
 // HTTPClient is a client which can make HTTP requests
@@ -262,7 +311,7 @@ func NewClient(url string, opt ...Option) *Client {
 }
 
 // AddHeader adds envelope header
-func (s *Client) AddHeader(header interface{}) {
+func (s *Client) AddHeader(header Header) {
 	s.headers = append(s.headers, header)
 }
 
@@ -277,13 +326,18 @@ func (s *Client) Call(soapAction string, request, response interface{}) error {
 }
 
 func (s *Client) call(ctx context.Context, soapAction string, request, response interface{}) error {
-	envelope := SOAPEnvelope{}
-
-	if s.headers != nil && len(s.headers) > 0 {
-		envelope.Headers = s.headers
+	var envelope Envelope = new(SOAPEnvelope)
+	if s.opts.envelope != nil {
+		if err := copier.Copy(&envelope, &s.opts.envelope); err != nil {
+			return err
+		}
 	}
 
-	envelope.Body.Content = request
+	if s.headers != nil && len(s.headers) > 0 {
+		envelope.AddHeaders(s.headers)
+	}
+
+	envelope.AddContent(request)
 	buffer := new(bytes.Buffer)
 	var encoder SOAPEncoder
 	if s.opts.mtom {
@@ -343,8 +397,13 @@ func (s *Client) call(ctx context.Context, soapAction string, request, response 
 	}
 	defer res.Body.Close()
 
-	respEnvelope := new(SOAPEnvelope)
-	respEnvelope.Body = SOAPBody{Content: response}
+	var respEnvelope Envelope = new(SOAPEnvelope)
+	if s.opts.envelope != nil {
+		if err = copier.Copy(&respEnvelope, &s.opts.envelope); err != nil {
+			return err
+		}
+	}
+	respEnvelope.AddContent(response)
 
 	mtomBoundary, err := getMtomHeader(res.Header.Get("Content-Type"))
 	if err != nil {
@@ -358,11 +417,13 @@ func (s *Client) call(ctx context.Context, soapAction string, request, response 
 		dec = xml.NewDecoder(res.Body)
 	}
 
-	if err := dec.Decode(respEnvelope); err != nil {
+	if err := dec.DecodeElement(respEnvelope, &xml.StartElement{
+		Name: respEnvelope.GetXMLName(),
+	}); err != nil && err != io.EOF {
 		return err
 	}
 
-	fault := respEnvelope.Body.Fault
+	fault := respEnvelope.GetFault()
 	if fault != nil {
 		return fault
 	}

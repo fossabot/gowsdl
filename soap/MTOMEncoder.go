@@ -248,3 +248,7 @@ func (d *mtomDecoder) Decode(v interface{}) error {
 	}
 	return nil
 }
+
+func (d *mtomDecoder) DecodeElement(v interface{}, _ *xml.StartElement) error {
+	return d.Decode(v)
+}
