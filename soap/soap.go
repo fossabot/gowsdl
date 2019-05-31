@@ -24,19 +24,24 @@ type SOAPDecoder interface {
 }
 
 type Envelope interface {
-	AddHeaders(headers []Header)
+	AddAction(soapAction string)
+	SetHeader(header Header)
 	AddContent(content interface{})
 	GetFault() *SOAPFault
 }
 
 type SOAPEnvelope struct {
 	XMLName xml.Name `xml:"http://schemas.xmlsoap.org/soap/envelope/ Envelope"`
-	Headers []Header `xml:"http://schemas.xmlsoap.org/soap/envelope/ Header"`
+	Header  Header   `xml:"http://schemas.xmlsoap.org/soap/envelope/ Header"`
 	Body    SOAPBody
 }
 
-func (s *SOAPEnvelope) AddHeaders(headers []Header) {
-	s.Headers = headers
+func (s *SOAPEnvelope) AddAction(soapAction string) {
+	s.Header.SetAction(soapAction)
+}
+
+func (s *SOAPEnvelope) SetHeader(header Header) {
+	s.Header = header
 }
 
 func (s *SOAPEnvelope) AddContent(content interface{}) {
@@ -48,12 +53,32 @@ func (s *SOAPEnvelope) GetFault() *SOAPFault {
 }
 
 type Header interface {
+	SetAction(action string)
 	SetContent(content interface{})
 }
 
+type SOAPHeaderTo struct {
+	XMLName        xml.Name `xml:"To"`
+	MustUnderstand string   `xml:"mustUnderstand,attr,omitempty"`
+	Data           string   `xml:",chardata"`
+}
+
+type SOAPHeaderAction struct {
+	XMLName xml.Name `xml:"Action"`
+	Data    string   `xml:",chardata"`
+}
+
 type SOAPHeader struct {
-	XMLName xml.Name    `xml:"http://schemas.xmlsoap.org/soap/envelope/ Header"`
+	XMLName xml.Name `xml:"http://schemas.xmlsoap.org/soap/envelope/ Header"`
+	To      *SOAPHeaderTo
+	Action  *SOAPHeaderAction
 	Content interface{} `xml:",omitempty"`
+}
+
+func (h *SOAPHeader) SetAction(action string) {
+	h.Action = &SOAPHeaderAction{
+		Data: action,
+	}
 }
 
 func (h *SOAPHeader) SetContent(content interface{}) {
@@ -291,7 +316,7 @@ type Client struct {
 	url      string
 	opts     *options
 	envelope Envelope
-	headers  []Header
+	header   Header
 }
 
 // HTTPClient is a client which can make HTTP requests
@@ -314,7 +339,7 @@ func NewClient(url string, opt ...Option) *Client {
 
 // AddHeader adds envelope header
 func (s *Client) AddHeader(header Header) {
-	s.headers = append(s.headers, header)
+	s.header = header
 }
 
 // CallContext performs HTTP POST request with a context
@@ -335,8 +360,11 @@ func (s *Client) call(ctx context.Context, soapAction string, request, response 
 		}
 	}
 
-	if s.headers != nil && len(s.headers) > 0 {
-		envelope.AddHeaders(s.headers)
+	if s.header != nil {
+		envelope.SetHeader(s.header)
+	}
+	if soapAction != "" {
+		envelope.AddAction(soapAction)
 	}
 
 	envelope.AddContent(request)
