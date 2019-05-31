@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"encoding/xml"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"time"
@@ -28,7 +27,6 @@ type Envelope interface {
 	AddHeaders(headers []Header)
 	AddContent(content interface{})
 	GetFault() *SOAPFault
-	GetXMLName() xml.Name
 }
 
 type SOAPEnvelope struct {
@@ -47,10 +45,6 @@ func (s *SOAPEnvelope) AddContent(content interface{}) {
 
 func (s *SOAPEnvelope) GetFault() *SOAPFault {
 	return s.Body.Fault
-}
-
-func (s *SOAPEnvelope) GetXMLName() xml.Name {
-	return xml.Name{}
 }
 
 type Header interface {
@@ -203,7 +197,8 @@ type options struct {
 	client           HTTPClient
 	httpHeaders      map[string]string
 	mtom             bool
-	envelope         Envelope
+	request          Envelope
+	response         Envelope
 }
 
 var defaultOptions = options{
@@ -215,10 +210,17 @@ var defaultOptions = options{
 // A Option sets options such as credentials, tls, etc.
 type Option func(*options)
 
-// With Custom Envelope is an option for customizing the Envelope.
-func WithCustomEnvelope(e Envelope) Option {
+// With Custom Envelope Request is an option for customizing the Envelope.
+func WithCustomRequest(e Envelope) Option {
 	return func(o *options) {
-		o.envelope = e
+		o.request = e
+	}
+}
+
+// With Custom Envelope Response is an option for customizing the Envelope.
+func WithCustomResponse(e Envelope) Option {
+	return func(o *options) {
+		o.response = e
 	}
 }
 
@@ -327,8 +329,8 @@ func (s *Client) Call(soapAction string, request, response interface{}) error {
 
 func (s *Client) call(ctx context.Context, soapAction string, request, response interface{}) error {
 	var envelope Envelope = new(SOAPEnvelope)
-	if s.opts.envelope != nil {
-		if err := copier.Copy(&envelope, &s.opts.envelope); err != nil {
+	if s.opts.request != nil {
+		if err := copier.Copy(&envelope, &s.opts.request); err != nil {
 			return err
 		}
 	}
@@ -398,8 +400,8 @@ func (s *Client) call(ctx context.Context, soapAction string, request, response 
 	defer res.Body.Close()
 
 	var respEnvelope Envelope = new(SOAPEnvelope)
-	if s.opts.envelope != nil {
-		if err = copier.Copy(&respEnvelope, &s.opts.envelope); err != nil {
+	if s.opts.response != nil {
+		if err = copier.Copy(&respEnvelope, &s.opts.response); err != nil {
 			return err
 		}
 	}
@@ -417,9 +419,7 @@ func (s *Client) call(ctx context.Context, soapAction string, request, response 
 		dec = xml.NewDecoder(res.Body)
 	}
 
-	if err := dec.DecodeElement(respEnvelope, &xml.StartElement{
-		Name: respEnvelope.GetXMLName(),
-	}); err != nil && err != io.EOF {
+	if err := dec.Decode(respEnvelope); err != nil {
 		return err
 	}
 
