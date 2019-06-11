@@ -27,7 +27,7 @@ type Envelope interface {
 	AddAction(soapAction string)
 	SetHeader(header Header)
 	AddContent(content interface{})
-	GetFault() *SOAPFault
+	GetFault() error
 }
 
 type SOAPEnvelope struct {
@@ -48,7 +48,7 @@ func (s *SOAPEnvelope) AddContent(content interface{}) {
 	s.Body = SOAPBody{Content: content}
 }
 
-func (s *SOAPEnvelope) GetFault() *SOAPFault {
+func (s *SOAPEnvelope) GetFault() error {
 	return s.Body.Fault
 }
 
@@ -88,7 +88,7 @@ func (h *SOAPHeader) SetContent(content interface{}) {
 type SOAPBody struct {
 	XMLName xml.Name `xml:"http://schemas.xmlsoap.org/soap/envelope/ Body"`
 
-	Fault   *SOAPFault  `xml:",omitempty"`
+	Fault   error       `xml:",omitempty"`
 	Content interface{} `xml:",omitempty"`
 }
 
