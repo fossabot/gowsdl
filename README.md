@@ -3,6 +3,7 @@
 [![Gitter](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/hooklift/gowsdl?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 [![GoDoc](https://godoc.org/github.com/zevst/gowsdl?status.svg)](https://godoc.org/github.com/zevst/gowsdl)
 [![Build Status](https://travis-ci.org/zevst/gowsdl.svg?branch=master)](https://travis-ci.org/zevst/gowsdl)
+[![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Fzevst%2Fgowsdl.svg?type=shield)](https://app.fossa.io/projects/git%2Bgithub.com%2Fzevst%2Fgowsdl?ref=badge_shield)
 
 Generates Go code from a WSDL file.
 
@@ -35,3 +36,7 @@ Usage: gowsdl [options] myservice.wsdl
   -i    Skips TLS Verification
   -v    Shows gowsdl version
   ```
+
+
+## License
+[![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Fzevst%2Fgowsdl.svg?type=large)](https://app.fossa.io/projects/git%2Bgithub.com%2Fzevst%2Fgowsdl?ref=badge_large)
